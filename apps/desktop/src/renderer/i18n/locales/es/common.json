@@ -2670,6 +2670,7 @@
         "de": "Deutsch",
         "pt-PT": "Português (Portugal)",
         "pt-BR": "Português (Brasil)",
+        "id": "Bahasa Indonesia",
         "classical": "文言"
       },
       "classical": {
@@ -14488,7 +14489,6 @@
       "regionAria": "Cola de mensajes pendientes",
       "listAria": "Mensajes en cola",
       "pausedFooter": "Tarea detenida, cola en pausa",
-
       "steerUnsupportedNotice": "Este motor no admite incorporar mensajes. Los mensajes en cola se enviarán cuando termine el turno actual.",
       "resumeAction": "Continuar enviando",
       "resumeAria": "Continuar enviando mensajes en cola",

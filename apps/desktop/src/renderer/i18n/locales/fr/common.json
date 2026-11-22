@@ -2670,6 +2670,7 @@
         "de": "Deutsch",
         "pt-PT": "Português (Portugal)",
         "pt-BR": "Português (Brasil)",
+        "id": "Bahasa Indonesia",
         "classical": "文言"
       },
       "classical": {
@@ -14488,7 +14489,6 @@
       "regionAria": "File d'attente des messages",
       "listAria": "Messages en file d'attente",
       "pausedFooter": "Tâche arrêtée, file d'attente en pause",
-
       "steerUnsupportedNotice": "Ce moteur ne permet pas de réorienter. Les messages en attente seront envoyés à la fin du tour en cours.",
       "resumeAction": "Reprendre l'envoi",
       "resumeAria": "Reprendre l'envoi des messages en file d'attente",

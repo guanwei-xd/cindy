@@ -2632,6 +2632,7 @@
         "de": "Deutsch",
         "pt-PT": "Português (Portugal)",
         "pt-BR": "Português (Brasil)",
+        "id": "Bahasa Indonesia",
         "classical": "文言"
       },
       "classical": {
@@ -14373,7 +14374,6 @@
       "regionAria": "Warteschlange ausstehender Nachrichten",
       "listAria": "Nachrichten in der Warteschlange",
       "pausedFooter": "Aufgabe gestoppt, Warteschlange pausiert",
-
       "steerUnsupportedNotice": "Diese Engine unterstützt kein Einbringen. Nachrichten in der Warteschlange werden nach der aktuellen Runde gesendet.",
       "resumeAction": "Senden fortsetzen",
       "resumeAria": "Nachrichten aus der Warteschlange weiter senden",
