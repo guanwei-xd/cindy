@@ -26,6 +26,7 @@ vi.mock('@/session/mobileDurableOutbox', () => ({
 }));
 import { getMobileAuthOwner, setMobileAuthOwner } from '@/auth/authOwnerGeneration';
 import { setMobileDebugSink } from '@/debug/mobileDebugLog';
+import { i18n } from '@/i18n';
 import { returnNewSessionToEdit } from '@/session/returnNewSessionToEdit';
 const recoveryAsyncStorage = vi.hoisted(() => ({
   getItem: vi.fn(async (key: string) => recoveryStorage.get(key) ?? null),
@@ -972,6 +973,30 @@ describe('newSessionCreation pipeline', () => {
     );
   });
 
+  // 测试价值:2026-11-29 手机新建 worktree 任务时，电脑明确拒绝(插件正在停用或更新),
+  // 失败页却提示「请重新连接设备后再试」——重连解决不了。失败后会自动带回新建页，
+  // 走真实管线的托管 worktree 分支:明确拒绝提示内容已带回、可重新发送，断连类不确定失败保留重连提示。
+  it.each([
+    ['The plugin is stopping or updating; try again after it is enabled', 'session.new.createRejectedResend'],
+    ['[NOT_CONNECTED] offline', 'session.new.worktreeCleanupPending'],
+  ] as const)('points a managed-worktree create failure at the step that helps (%s)', async (message, hintKey) => {
+    const maker = makeMaker({ createSession: vi.fn(async () => { throw new Error(message); }) });
+    startNewSessionCreation(makeParams('s23', maker, {
+      draft: { ...DRAFT, workingDir: '/repo/.cindy-worktrees/auto-three' },
+      precreatedWorktree: {
+        path: '/repo/.cindy-worktrees/auto-three',
+        recoveryKey: 'recovery-key-3333333333',
+        originalWorkingDir: '/repo',
+      },
+      precreatedWorktreeAccountId: 'owner-a',
+    }));
+    await flushPipeline();
+    const task = getNewSessionCreationTask('s23');
+    expect(task?.status).toBe('create-failed');
+    expect(task?.error).toContain(i18n.t(hintKey));
+    expect(maker.createSession).toHaveBeenCalledOnce();
+  });
+
   it('started 写盘后二次鉴权中止:账本降回 precreated,任务可返回编辑(codex P2)', async () => {
     // 首次鉴权通过、precreated 账本写成 session-create-started 后,二次鉴权发现
     // 来源全断开——createSession 尚未调用,必须先把账本降回 precreated 再失败:
@@ -1803,6 +1828,65 @@ describe('newSessionCreation pipeline', () => {
       await flushPipeline();
       expect(enable).not.toHaveBeenCalled();
       expect(maker.input.enqueue).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // 测试价值
+  // - 生产入口与可观察结果：经 startNewSessionCreation + subscribeNewSessionCreationTasks 验证 durable
+  //   handoff 把稳定连接代内刚读回的权威会话交给发件箱（含协同 lead 补丁），连接换代时不附带 connectionEpoch，
+  //   且 finishTask 立即通知订阅者唤醒发件箱。
+  // - Bug／规则依据：消除新建任务完成后最多 2s 的发件箱轮询等待，并避免发件箱重复调 local-db:sessions:get。
+  // - 现有覆盖缺口：原有测试未断言 handoffFirstMessage 的第二参数会话上下文、跨读换代过滤或完成后的订阅通知。
+  // - 最小失败输入：1) 同代 getSession + orcaEnable 成功走 durable handoff；2) getSession 期间 epoch 递增。
+  // - tier：unit（进程内 fake，毫秒级）。
+  describe('durable handoff session reuse and immediate wake-up', () => {
+    it('passes the freshly read session and epoch on stable connections and notifies creation task listeners on finish', async () => {
+      const enable = vi.fn(async () => ({ workerSessionId: 'worker-1' }));
+      const maker = Object.assign(makeMaker({
+        getSession: vi.fn(async (id: string) => sessionFromCreateResult({ sessionId: id }, DRAFT)),
+      }), {
+        getCapabilities: vi.fn(async () => ({ supportsOrcaWorkerPermissionMode: true })),
+        orca: { enable, listWorkers: vi.fn(async () => []) },
+      });
+      const handoffFirstMessage = vi.fn(async (_item: unknown, _handoff?: unknown) => {});
+      const onTaskChange = vi.fn();
+      const off = subscribeNewSessionCreationTasks(onTaskChange);
+      try {
+        const params = makeParams('durable-handoff-ok', maker, {
+          orcaEnable: { workerAgent: 'codex' as const, role: 'developer', label: 'developer', workerPermissionMode: 'auto' as const },
+        });
+        params.transport.getConnectionEpoch = () => 12;
+        params.transport.handoffFirstMessage = handoffFirstMessage;
+        startNewSessionCreation(params);
+        await flushPipeline();
+        expect(handoffFirstMessage).toHaveBeenCalledTimes(1);
+        expect(handoffFirstMessage.mock.calls[0]?.[1]).toEqual({
+          session: expect.objectContaining({ id: 'durable-handoff-ok', orcaRole: 'lead' }),
+          connectionEpoch: 12,
+        });
+        expect(getNewSessionCreationTask('durable-handoff-ok')).toBeNull();
+        expect(onTaskChange).toHaveBeenCalled();
+      } finally {
+        off();
+      }
+    });
+
+    it('omits session handoff metadata when the connection reconnects while reading the session', async () => {
+      let epoch = 3;
+      const maker = makeMaker({
+        getSession: vi.fn(async (id: string) => {
+          epoch = 4;
+          return sessionFromCreateResult({ sessionId: id }, DRAFT);
+        }),
+      });
+      const handoffFirstMessage = vi.fn(async (_item: unknown, _handoff?: unknown) => {});
+      const params = makeParams('durable-handoff-reconnect', maker);
+      params.transport.getConnectionEpoch = () => epoch;
+      params.transport.handoffFirstMessage = handoffFirstMessage;
+      startNewSessionCreation(params);
+      await flushPipeline();
+      expect(handoffFirstMessage).toHaveBeenCalledTimes(1);
+      expect(handoffFirstMessage.mock.calls[0]).toHaveLength(1);
     });
   });
 });
